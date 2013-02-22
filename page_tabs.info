@@ -1,0 +1,5 @@
+name = Page Tabs
+description = Create page tabs blocks
+core = 7.x
+version = 7.x.1
+package = Deeplace

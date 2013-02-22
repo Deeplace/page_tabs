@@ -1,0 +1,348 @@
+<?php
+
+/**
+ * Implements hook_menu()
+ */
+function page_tabs_menu() {
+  $items['admin/content/page_tabs'] = array(
+    'title' => 'Page Tabs order',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('page_tabs_weight_form'),
+    'access arguments' => array('administer content'),
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 3,
+    'file' => 'page_tabs.forms.inc',
+  );
+
+  $items['admin/config/system/page-special-tabs'] = array(
+    'title' => 'Page special tabs settings',
+    'description' => 'Configure page special tabs',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('page_tabs_special_form'),
+    'access arguments' => array('administer content'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'page_tabs.forms.inc',
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_node_insert()
+ */
+
+function page_tabs_node_insert($node) {
+  if($node->type == 'page_tab') {
+    db_insert('page_tabs_weight')
+      ->fields(
+        array(
+          'nid' => $node->nid,
+          'vid' => $node->vid,
+          'weight' => 0,
+          'type' => 'node',
+        )
+      )
+      ->execute();
+    $node->page_tab['nid'] = $node->nid;
+    $node->page_tab['vid'] = $node->vid;
+    drupal_write_record('page_tabs_settings', $node->page_tab);
+  }
+}
+
+/**
+ * Implements hook_node_update()
+ */
+
+function page_tabs_node_update($node) {
+  if($node->type == 'page_tab') {
+    $node->page_tab['nid'] = $node->nid;
+    $node->page_tab['vid'] = $node->vid;
+    drupal_write_record('page_tabs_settings', $node->page_tab, 'nid');
+  }
+}
+
+/**
+ * Implements hook_node_delete()
+ */
+
+function page_tabs_node_delete($node) {
+  if($node->type == 'page_tab') {
+    db_delete('page_tabs_weight')
+      ->condition('vid', $node->vid)
+      ->execute();
+  }
+}
+
+/**
+ * Implements hook_theme()
+ */
+
+function page_tabs_theme($existing, $type, $theme, $path) {
+  return array(
+    'page_tabs_weight_form' => array(
+      'render element' => 'form',
+    ),
+    'page_tabs' => array(
+      'render element' => 'page',
+    )
+  );
+}
+
+/**
+ * Implements hook_form_alter
+ */
+
+function page_tabs_form_alter(&$form, &$form_state, $form_id) {
+  if($form_id == 'page_tab_node_form') {
+    if(!empty($form['nid'])) {
+      $query = db_select('page_tabs_settings', 'pts')
+        ->fields('pts')
+        ->condition('pts.nid', $form['nid'])
+        ->condition('pts.vid', $form['vid']);
+      $page_tab = $query->execute()->fetchObject();
+    }
+    $form['page_tab'] = array(
+      '#type' => 'fieldset',
+      '#title' => t('Page tab settings'),
+      '#collapsible' => TRUE,
+      '#collapsed' => TRUE,
+      '#tree' => TRUE
+    );
+
+    $form['page_tab']['item_class'] = array(
+      '#type' => 'textfield',
+      '#title' => t('List item class'),
+      '#description' => t('Class of &lt;li&gt; element. Can set multiple separated by space. '),
+      '#default_value' => isset($page_tab->item_class) ? $page_tab->item_class : ''
+    );
+
+    $form['page_tab']['link_prefix'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Link prefix'),
+      '#description' => t('Html code of link prefix'),
+      '#default_value' => isset($page_tab->link_prefix) ? $page_tab->link_prefix : ''
+    );
+
+    $form['page_tab']['link_suffix'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Link suffix'),
+      '#description' => t('Html code of link suffix'),
+      '#default_value' => isset($page_tab->link_suffix) ? $page_tab->link_suffix : ''
+    );
+
+    $form['page_tab']['link_class'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Link class'),
+      '#description' => t('Class of &lt;a&gt; element. Can set multiple separated by space.'),
+      '#default_value' => isset($page_tab->link_class) ? $page_tab->link_class : ''
+    );
+
+    $form['page_tab']['fragment'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Fragment of link.'),
+      '#description' => t('Directly url. Example !example. Dont start with #', array('!example' => 'http://site.com#<strong>tab-name</strong>')),
+      '#default_value' => isset($page_tab->fragment) ? $page_tab->fragment : ''
+    );
+  }
+}
+
+/**
+ * Implements hook_block_info()
+ */
+
+function page_tabs_block_info() {
+  $blocks = array();
+  //TODO FIXME
+  $vocabulary = taxonomy_vocabulary_machine_name_load('page_tabs');
+  $tree = taxonomy_get_tree($vocabulary->vid, 0, 1);
+
+  foreach($tree as $k => $v) {
+    $blocks['page_tabs_block__' . $v->tid] = array(
+      'info' => t('Page Tabs block. Category @category', array('@category' => $v->name)),
+    );
+  }
+
+  return $blocks;
+}
+
+/**
+ * Implements hook_block_view()
+ */
+
+function page_tabs_block_view($delta = '') {
+  $block = array();
+  if(strpos($delta, 'page_tabs_block__') === 0) {
+    $tid = explode('__',$delta);
+    $block['content'] = page_tabs_generate_tabs($tid[1]);
+  }
+
+  return $block;
+}
+
+function page_tabs_generate_tabs($category_tid) {
+  $output['page_tabs'] = array(
+    '#theme' => 'page_tabs',
+    '#category' => $category_tid,
+    '#prefix' => '',
+    '#suffix' => '',
+  );
+  global $language;
+  drupal_add_library('system', 'ui.tabs');
+  $path = drupal_get_path('module', 'page_tabs');
+
+// Добавляем инициализацию табов последними, дабы избежать проблем, если у нас внутри есть accordion, Jqtransform
+// или что-то в этом роде, которые неправильно вычисляют высоту в случае если контайнер спрятан.
+  drupal_add_js("{$path}/page_tabs.js", array(
+    'weight' => 99,
+    'group' => JS_THEME,
+  ));
+
+
+  /* Select all records from tabs_weight. After will sift*/
+  $query = db_select('page_tabs_weight', 'ptw');
+  $query->leftJoin('node', 'n', 'ptw.vid = n.vid');
+  $query->leftJoin('field_data_body', 'fdb', 'ptw.vid = fdb.revision_id');
+  $query->leftJoin('page_specials_tabs', 'pst', 'ptw.spec_id = pst.id');
+  $query->leftJoin('field_data_field_page_tabs_category', 'fdfptc', 'ptw.vid = fdfptc.revision_id');
+
+  $query->fields('ptw')
+    ->fields('n', array('title', 'language', 'status'))
+    ->fields('fdb', array('body_value'))
+    ->fields('fdfptc', array('field_page_tabs_category_tid'))
+    ->fields('pst', array('title', 'enabled', 'category', 'unique_name'));
+  $query->addField('pst', 'title', 'spec_title');
+  $query->addField('pst', 'enabled', 'spec_enabled');
+  $query->addField('pst', 'category', 'spec_category');
+  $query->addField('pst', 'unique_name', 'spec_unique_name');
+
+  $query->orderBy('ptw.weight', 'ASC');
+  $result = $query->execute();
+
+  $tabs_titles = array();
+  $tabs = '';
+
+  foreach($result as $obj) {
+    $tab = '';
+    if($obj->type != 'node') {
+      if($obj->enabled > 0 && $obj->spec_category == $category_tid) {
+        $content = module_invoke_all('page_tabs_custom_pages_view', $obj->spec_unique_name);
+          if(!empty($content['content'])) {
+            $attributes = array(
+              'external' => TRUE,
+              'fragment' => 'tab_' . $obj->id
+            );
+
+            if(!empty($content['class'])) {
+              $attributes['attributes']['class'][] = $content['class'];
+            }
+
+            $output['page_tabs']['title'][] = array(
+              '#link_inner_prefix' => '<span>',
+              '#link_inner_suffix' => '</span>',
+              '#link_prefix' => '',
+              '#link_suffix' => '<div class="sales twenty"></div>',
+              '#value' => $obj->spec_title,
+              '#link_attributes' => array(
+                'html' => TRUE,
+                'external' => TRUE,
+                'fragment' => 'tab_' . $obj->id,
+                'attributes' => array(
+                  'class' => array(
+                    !empty($content['link_class']) ? $content['link_class'] : ''
+                  )
+                )
+              ),
+              '#item_class' => !empty($content['item_class']) ? $content['item_class'] : ''
+            );
+
+            $output['page_tabs']['content'][] = array(
+              '#prefix' => '<div class="tab-content" id="' . 'tab_' . $obj->id . '">',
+              '#value' => $content['content'],
+              '#suffix' => '</div>'
+            );
+          }
+      }
+    }
+    else {
+      if($obj->field_page_tabs_category_tid == $category_tid && $obj->status > 0 && in_array($obj->language, array($language->language, LANGUAGE_NONE))) {
+        $query = db_select('page_tabs_settings', 'pts')
+          ->fields('pts')
+          ->condition('pts.nid', $obj->nid)
+          ->condition('pts.vid', $obj->vid);
+        $page_tab = $query->execute()->fetchObject();
+
+        $output['page_tabs']['title'][] = array(
+          '#link_inner_prefix' => '<span>',
+          '#link_inner_suffix' => '</span>',
+          '#link_prefix' => !empty($page_tab->link_prefix) ? $page_tab->link_prefix : '',
+          '#link_suffix' => !empty($page_tab->link_suffix) ? $page_tab->link_suffix : '',
+          '#value' => $obj->title,
+          '#link_attributes' => array(
+            'html' => TRUE,
+            'external' => TRUE,
+            'fragment' => !empty($page_tab->fragment) ? $page_tab->fragment : 'tab_' . $obj->id ,
+            'attributes' => array(
+              'class' => array(
+                !empty($page_tab->link_class) ? $page_tab->link_class : '',
+              )
+            )
+          ),
+          '#item_class' => !empty($page_tab->item_class) ? $page_tab->item_class : '',
+        );
+
+        $output['page_tabs']['content'][] = array(
+          '#prefix' => '<div class="tab-content" id="' . (!empty($page_tab->fragment) ? $page_tab->fragment : 'tab_' . $obj->id ) . '">',
+          '#value' => $obj->body_value,
+          '#suffix' => '</div>'
+        );
+      }
+    }
+  }
+
+  return $output;
+}
+
+function theme_page_tabs($vars) {
+  $output = '';
+  $links = array();
+  $content = '';
+  $data = $vars['page'];
+
+  if(isset($data['title'])) {
+    foreach($data['title'] as $v) {
+      $title = (!empty($v['#link_inner_prefix'])) ? $v['#link_inner_prefix'] : '';
+      $title .= $v['#value'];
+      $title .= (!empty($v['#link_inner_suffix'])) ? $v['#link_inner_suffix'] : '';
+      $links[] = array(
+        'data' =>
+          (!empty($v['#link_prefix']) ? $v['#link_prefix'] : '') .
+          l($title, '', $v['#link_attributes']) .
+          (!empty($v['#link_suffix']) ? $v['#link_suffix'] : ''),
+        'class' => array($v['#item_class'])
+      );
+    }
+  }
+
+  if(isset($data['content'])) {
+    foreach($data['content'] as $v) {
+      $content .= (!empty($v['#prefix'])) ? $v['#prefix'] : '';
+      $content .= $v['#value'];
+      $content .= (!empty($v['#suffix'])) ? $v['#suffix'] : '';
+    }
+  }
+
+  if(!empty($content)) {
+    $content = '<div class="tab-wrapper">' . $content . '</div>';
+  }
+
+  if(count($links)) {
+    $output .= !empty($data['prefix']) ? $data['prefix'] : '';
+    $output .= '<div id="page_tabs_category_' . (!empty($data['#category']) ? $data['#category'] : '') . '" class="page_tabs">';
+    $output .= theme('item_list', array('items' => $links, 'attributes' => array('class' => array('tab_navigation'))));
+    $output .= $content;
+    $output .= '</div>';
+    $output .= !empty($data['suffix']) ? $data['suffix'] : '';
+  }
+
+  return $output;
+}

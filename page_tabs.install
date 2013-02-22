@@ -1,0 +1,73 @@
+<?php
+
+/**
+ * Implements hook_schema()
+ */
+
+function page_tabs_schema() {
+  $schema['page_tabs_weight'] = array(
+    'fields' => array(
+      'id' => array('type' => 'serial', 'not null' => TRUE, 'unsigned' => TRUE),
+      'spec_id' => array('type' => 'int', 'not null' => TRUE, 'unsigned' => TRUE, 'default' => '0'),
+      'nid' => array('type' => 'int', 'not null' => TRUE, 'unsigned' => TRUE, 'default' => '0'),
+      'vid' => array('type' => 'int', 'not null' => TRUE, 'unsigned' => TRUE, 'default' => '0'),
+      'weight' => array('type' => 'int', 'not null' => TRUE, 'default' => '0'),
+      'type' => array('type' => 'varchar', 'not null' => TRUE, 'length' => 32, 'default' => ''),
+    ),
+    'primary key' => array('id'),
+    'indexes' => array(
+      'vid' => array('vid'),
+      'nid' => array('nid'),
+      'spec_id' => array('spec_id'),
+    )
+  );
+
+  $schema['page_tabs_settings'] = array(
+    'fields' => array(
+      'nid' => array('type' => 'int', 'not null' => TRUE, 'unsigned' => TRUE, 'default' => '0'),
+      'vid' => array('type' => 'int', 'not null' => TRUE, 'unsigned' => TRUE, 'default' => '0'),
+      'item_class' => array('type' => 'varchar', 'not null' => TRUE, 'length' => 255, 'default' => ''),
+      'link_prefix' => array('type' => 'varchar', 'not null' => TRUE, 'length' => 255, 'default' => ''),
+      'link_suffix' => array('type' => 'varchar', 'not null' => TRUE, 'length' => 255, 'default' => ''),
+      'link_class' => array('type' => 'varchar', 'not null' => TRUE, 'length' => 255, 'default' => ''),
+      'fragment' => array('type' => 'varchar', 'not null' => TRUE, 'length' => 255, 'default' => ''),
+    ),
+    'indexes' => array(
+      'vid' => array('vid'),
+      'nid' => array('nid'),
+    )
+  );
+
+  $schema['page_specials_tabs'] = array(
+    'fields' => array(
+      'id' => array('type' => 'serial', 'not null' => TRUE, 'unsigned' => TRUE),
+      'unique_name' => array('type' => 'varchar', 'not null' => TRUE, 'length' => 255, 'default' => ''),
+      'title' => array('type' => 'varchar', 'not null' => TRUE, 'length' => 255, 'default' => ''),
+      'enabled' => array('type' => 'int', 'not null' => TRUE, 'unsigned' => TRUE),
+      'category' => array('type' => 'int', 'not null' => TRUE, 'unsigned' => TRUE),
+    ),
+    'primary key' => array('id'),
+    'unique keys' => array(
+      'unique_name' => array('unique_name')
+    ),
+    'indexes' => array(
+      'category' => array('category')
+    )
+  );
+
+  return $schema;
+}
+
+/**
+ * Performs module installation
+ */
+function page_tabs_install() {
+
+}
+
+/**
+ * Performs module uninstallation
+ */
+function page_tabs_uninstall() {
+
+}
